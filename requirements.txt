@@ -1,14 +1,16 @@
 Django==5.0.6
 python-dotenv==1.0.1
 youtube-transcript-api==0.6.2
-langchain==0.2.11
+langchain==0.1.20
 langchain-openai==0.1.19
-langchain-community==0.2.10
-langchain-google-genai==1.0.8
-langchain-core==0.2.26
+langchain-community==0.0.38
+langchain-google-genai==0.0.11
+langchain-core==0.1.52
+langchain-text-splitters==0.0.3
 faiss-cpu==1.12.0
 celery==5.3.4
 redis==5.0.7
 channels==4.1.0
 channels-redis==4.2.0
+numpy==1.26.4
 

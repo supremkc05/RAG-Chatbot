@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Transcript Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">
+                <i class="fas fa-robot text-blue-600"></i>
+                YouTube Transcript Chatbot
+            </h1>
+            <p class="text-gray-600">Ask questions about any YouTube video</p>
+        </header>
+
+        <div class="max-w-2xl mx-auto">
+            <!-- URL Input Form -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4">Enter YouTube Video URL</h2>
+                <form id="urlForm" class="space-y-4">
+                    <div>
+                        <input 
+                            type="url" 
+                            id="videoUrl" 
+                            placeholder="https://www.youtube.com/watch?v=..." 
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            required
+                        >
+                    </div>
+                    <button 
+                        type="submit" 
+                        id="submitBtn"
+                        class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <i class="fas fa-play mr-2"></i>
+                        Start Chat
+                    </button>
+                </form>
+            </div>
+
+            <!-- Processing Status -->
+            <div id="processingStatus" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+                <h3 class="text-lg font-semibold mb-4">Processing Video...</h3>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span id="statusText" class="text-gray-600">Initializing...</span>
+                        <span id="statusPercentage" class="text-sm text-gray-500">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div id="statusMessage" class="text-sm text-gray-500"></div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6 hidden">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                <span id="errorText"></span>
+            </div>
+
+            <!-- Recent Sessions -->
+            {% if recent_sessions %}
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold mb-4">Recent Conversations</h3>
+                <div class="space-y-2">
+                    {% for session in recent_sessions %}
+                    <a href="{% url 'chatbot:chat' session.session_id %}" 
+                       class="block p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition duration-200">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="font-medium text-gray-800">Video: {{ session.video_id }}</p>
+                                <p class="text-sm text-gray-500">{{ session.created_at|date:"M d, Y H:i" }}</p>
+                            </div>
+                            <i class="fas fa-chevron-right text-gray-400"></i>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('urlForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const videoUrl = document.getElementById('videoUrl').value;
+            const submitBtn = document.getElementById('submitBtn');
+            const processingDiv = document.getElementById('processingStatus');
+            const errorDiv = document.getElementById('errorMessage');
+            
+            // Reset UI
+            errorDiv.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
+            
+            try {
+                const response = await fetch('/api/create-session/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ video_url: videoUrl })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    processingDiv.classList.remove('hidden');
+                    checkProcessingStatus(data.session_id);
+                } else {
+                    showError(data.error);
+                    resetForm();
+                }
+            } catch (error) {
+                showError('Failed to start processing. Please try again.');
+                resetForm();
+            }
+        });
+        
+        async function checkProcessingStatus(sessionId) {
+            try {
+                const response = await fetch(`/api/status/${sessionId}/`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateProgress(data);
+                    
+                    if (data.is_processed) {
+                        // Redirect to chat interface
+                        window.location.href = `/chat/${sessionId}/`;
+                    } else if (data.status === 'error') {
+                        showError(data.error || 'Processing failed');
+                        resetForm();
+                    } else {
+                        // Continue checking status
+                        setTimeout(() => checkProcessingStatus(sessionId), 2000);
+                    }
+                } else {
+                    showError('Failed to check status');
+                    resetForm();
+                }
+            } catch (error) {
+                showError('Failed to check processing status');
+                resetForm();
+            }
+        }
+        
+        function updateProgress(data) {
+            const statusText = document.getElementById('statusText');
+            const statusPercentage = document.getElementById('statusPercentage');
+            const progressBar = document.getElementById('progressBar');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            const statusTexts = {
+                'pending': 'Initializing...',
+                'fetching': 'Fetching transcript...',
+                'processing': 'Processing text...',
+                'embedding': 'Creating embeddings...',
+                'completed': 'Completed!'
+            };
+            
+            statusText.textContent = statusTexts[data.status] || data.status;
+            statusPercentage.textContent = `${data.progress}%`;
+            progressBar.style.width = `${data.progress}%`;
+            
+            if (data.status === 'completed') {
+                statusMessage.textContent = 'Redirecting to chat...';
+            }
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+            errorText.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+        
+        function resetForm() {
+            const submitBtn = document.getElementById('submitBtn');
+            const processingDiv = document.getElementById('processingStatus');
+            
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-play mr-2"></i>Start Chat';
+            processingDiv.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
